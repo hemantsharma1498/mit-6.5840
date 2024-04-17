@@ -5,6 +5,7 @@ import "log"
 import "net/rpc"
 import "hash/fnv"
 import "errors"
+import "os"
 
 //
 // Map functions return a slice of KeyValue.
@@ -13,10 +14,14 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+type MAPF func(string, string) []KeyValue
+type REDF func(string, []string) string
 
 type WorkerData struct {
 	WorkerId string
-	fileName string
+	FileName string
+	MapFunc	MAPF
+	RedFunc REDF
 }
 
 type Server interface {
@@ -65,13 +70,22 @@ func Worker(mapf func(string, string) []KeyValue,
 		fmt.Println("Error encountered while getting worder ID: ", error)
 	}
 	w.WorkerId=workerId;
+	w.MapFunc=mapf;
+	w.RedFunc=reducef;
+
 	//Get file for map task
 	fileName, errorInt, error:=GetMapTask(&w, w.WorkerId);
 	if errorInt != 0 {
 		fmt.Printf("Error: ", errorInt);
 	}
-	fmt.Printf("Worker with id ", w.WorkerId, " has file named ", fileName);
-
+	w.FileName=fileName;
+	content, err:=os.ReadFile("../main/"+fileName);
+	if err != nil {
+		fmt.Println(err);
+	}
+	kv:=w.MapFunc(w.FileName, string(content));
+	fmt.Println(w.FileName);
+	fmt.Println(kv);
 
 }
 
@@ -96,9 +110,8 @@ func GetMapTask(w *WorkerData, workerId string) (string, int, error){
 
 	ok := call("Coordinator.AssignFile", &w, &w);
 	if ok {
-		w.fileName=w.fileName;
-		fmt.Println("Filename received: ", w.fileName);
-		return w.fileName, 0, nil;
+		fmt.Println("Filename received: ", w.FileName);
+		return w.FileName, 0, nil;
 	}
 	return "", 1, nil; 
 }

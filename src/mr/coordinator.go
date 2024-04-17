@@ -57,7 +57,7 @@ func (c *Coordinator)	 AssignFile(args *WorkerData, reply *WorkerData) error {
 	for k, v := range c.mapPhase{
 		if v == "0" {
 			c.mapPhase[k]=args.WorkerId;
-			args.fileName=k;
+			reply.FileName=k;
 			break;
 		}
 	}
@@ -101,13 +101,14 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 //
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	c := Coordinator{}
-
+	c := Coordinator{};
+	c.mapPhase=make(map[string]string, 1);
 	c.nReduce=nReduce;
 	// Your code here.
 	for _, file:= range files{
 		c.mapPhase[file]="0";
 	}
+
 
 	// 0. metawork
 		//completed: input files, count getting printed
