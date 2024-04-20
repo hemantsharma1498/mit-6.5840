@@ -83,9 +83,18 @@ func Worker(mapf func(string, string) []KeyValue,
 	if err != nil {
 		fmt.Println(err);
 	}
-	kv:=w.MapFunc(w.FileName, string(content));
-	fmt.Println(w.FileName);
-	fmt.Println(kv);
+	kv := w.MapFunc(w.FileName, string(content));
+	var mapFileName="mr-"+w.WorkerId+"-"+w.FileName;
+	file, err := os.Create(mapFileName);
+	if err != nil {
+		fmt.Println(err);
+	}
+	defer file.Close()
+	enc := json.NewEncoder(file)
+	for _, kv := ... {
+		err := enc.Encode(&kv)
+	}
+
 
 }
 
@@ -107,13 +116,21 @@ func Register(w *WorkerData) (string, error){
 }
 
 func GetMapTask(w *WorkerData, workerId string) (string, int, error){
-
+	args
 	ok := call("Coordinator.AssignFile", &w, &w);
 	if ok {
 		fmt.Println("Filename received: ", w.FileName);
 		return w.FileName, 0, nil;
 	}
 	return "", 1, nil; 
+}
+
+func SignalMapDone(fileName string){
+
+	ok := call("Coordinator.MapJobStatus", &w, &w);
+	if ok {
+		fmt.Printf("Map job closed for file ", fileName);
+	}
 }
 
 //

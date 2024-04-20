@@ -65,6 +65,9 @@ func (c *Coordinator)	 AssignFile(args *WorkerData, reply *WorkerData) error {
 	return nil;
 }
 
+func (c *Coordinator) MapJobStatus(args *WorkerData, reply *WorkerData) error {
+	delete(c.mapPhase, args.FileName);
+}
 
 //
 // start a thread that listens for RPCs from worker.go
