@@ -46,37 +46,39 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 	return nil
 }
 
-func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWorkerReply) error {
+func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWorkerRes) error {
 	reply.WorkerID = RandStringBytes(5)
 	return nil
 }
 
-func (c *Coordinator) AssignFile(args *WorkerData, reply *WorkerData) error {
+func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) error {
+	c.mapPhaseMutex.Lock()
+	defer c.mapPhaseMutex.Unlock()
 	for k, v := range c.mapPhase {
 		if v == "0" {
 			c.mapPhase[k] = args.WorkerId
-			reply.FileName = k
-			fmt.Println("File given: ", reply.FileName)
+			reply.Filename = k
+			fmt.Println("File given: ", reply.Filename)
 			break
 		}
 	}
-
 	return nil
 }
 
-func (c *Coordinator) MapJobUpdate(args *WorkerData, reply *WorkerData) error {
-	delete(c.mapPhase, args.FileName)
+func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneRes) error {
+	delete(c.mapPhase, args.Filename)
 	return nil
 }
 
-func (c *Coordinator) JobStatus(args *MrJobStatus, reply *MrJobStatus) error {
+func (c *Coordinator) JobStatus(args *JobStatusReq, reply *JobStatusRes) error {
 	if args.JobType == "Map" {
 		if len(c.mapPhase) == 0 {
-			reply.Map = true
+			reply.IsFinished = true
+			return nil
+		} else {
+			reply.IsFinished = false
 			return nil
 		}
-		args.Map = false
-		return nil
 	}
 	//Add for reduce, or remove reduce section if not required
 	return nil
@@ -113,10 +115,14 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	c.mapPhase = make(map[string]string, 1)
 	c.nReduce = nReduce
-	fmt.Printf("Coordinator spun up")
+	fmt.Println("Coordinator spun up")
 	// Your code here.
+	i := 1
 	for _, file := range files {
 		c.mapPhase[file] = "0"
+		if i == 4 {
+			break
+		}
 	}
 
 	// 0. metawork

@@ -25,19 +25,36 @@ type ExampleReply struct {
 }
 
 // Add your RPC definitions here.
-type RegisterWorkerArgs struct {
+type RegisterWorkerReq struct {
 	WorkerID string
 }
 
-type MrJobStatus struct {
-	JobType string
-	Map     bool
-	Reduce  bool
-}
-
-type RegisterWorkerReply struct {
+type RegisterWorkerRes struct {
 	WorkerID string
 	Error    int
+}
+
+type JobStatusReq struct {
+	JobType string
+}
+
+type SignalMapDoneReq struct {
+	Filename string
+}
+
+type AssignFileReq struct {
+	WorkerId string
+}
+
+type AssignFileRes struct {
+	Filename string
+}
+
+type SignalMapDoneRes struct {
+}
+
+type JobStatusRes struct {
+	IsFinished bool
 }
 
 // Cook up a unique-ish UNIX-domain socket name

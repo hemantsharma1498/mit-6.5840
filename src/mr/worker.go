@@ -20,7 +20,7 @@ type REDF func(string, []string) string
 
 type WorkerData struct {
 	WorkerId string
-	FileName string
+	Filename string
 	MapFunc  MAPF
 	RedFunc  REDF
 }
@@ -72,19 +72,21 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	for {
 		//Get file for map task
-		fileName, errorInt, error := GetMapTask(&w, w.WorkerId)
+		fileName, errorInt, error := GetMapTask(w.WorkerId)
 		if errorInt != 0 {
 			fmt.Println("Error: ", errorInt, error)
 		}
-		w.FileName = fileName
-		fmt.Printf(w.FileName)
+		if len(fileName) == 0 {
+			break
+		}
+		w.Filename = fileName
 		content, err := os.ReadFile("../main/" + fileName)
 		if err != nil {
 			fmt.Println(err)
 		}
-		kv := w.MapFunc(w.FileName, string(content))
-		var mapFileName = "mr-" + w.WorkerId + "-" + w.FileName
-		file, err := os.Create(mapFileName)
+		kv := w.MapFunc(w.Filename, string(content))
+		var mapFilename = "mr-" + w.WorkerId + "-" + w.Filename
+		file, err := os.Create(mapFilename)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -97,7 +99,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 		}
 		file.Close()
-		SignalMapDone(&w, w.FileName)
+		SignalMapDone(&w)
 		jobStatus := JobStatus("Map")
 		if jobStatus {
 			break
@@ -108,8 +110,8 @@ func Worker(mapf func(string, string) []KeyValue,
 
 // Register
 func Register(w *WorkerData) (string, error) {
-	args := RegisterWorkerArgs{}
-	reply := RegisterWorkerReply{}
+	args := RegisterWorkerReq{}
+	reply := RegisterWorkerRes{}
 
 	ok := call("Coordinator.RegisterWorker", &args, &reply)
 	if ok {
@@ -123,34 +125,39 @@ func Register(w *WorkerData) (string, error) {
 	}
 }
 
-func GetMapTask(w *WorkerData, workerId string) (string, int, error) {
-
-	ok := call("Coordinator.AssignFile", &w, &w)
+func GetMapTask(workerId string) (string, int, error) {
+	args := AssignFileReq{}
+	args.WorkerId = workerId
+	reply := AssignFileRes{}
+	ok := call("Coordinator.AssignFile", &args, &reply)
 	if ok {
-		return w.FileName, 0, nil
+		return reply.Filename, 0, nil
 	}
 	return "", 1, nil
 }
 
-func SignalMapDone(w *WorkerData, fileName string) {
-
-	ok := call("Coordinator.MapJobUpdate", &w, &w)
+func SignalMapDone(w *WorkerData) {
+	args := SignalMapDoneReq{}
+	args.Filename = w.Filename
+	reply := SignalMapDoneRes{}
+	ok := call("Coordinator.MapJobUpdate", &args, &reply)
 	if ok {
-		fmt.Println("map job closed for file ", fileName)
+		fmt.Println("map job closed for file ", w.Filename)
 	}
 }
 
 func JobStatus(job string) bool {
-	args := MrJobStatus{}
+	args := JobStatusReq{}
 	args.JobType = job
-	ok := call("Coordinator.JobStatus", &args, &args)
+	reply := JobStatusRes{}
+	ok := call("Coordinator.JobStatus", &args, &reply)
 	if !ok {
 		fmt.Println("Error in checking ", job, " job status")
 	}
-	if args.JobType == "Map" && args.Map {
+	if args.JobType == "Map" && reply.IsFinished {
 		fmt.Println("Map job finished")
 		return true
-	} else if args.JobType == "Reduce" && args.Reduce {
+	} else if args.JobType == "Reduce" && reply.IsFinished {
 		fmt.Println("Reduce job finished")
 		return true
 	}
