@@ -12,7 +12,7 @@ plugin:
 	# go build -buildmode=plugin -o $(PLUGIN_DIR)/$(PLUGIN_NAME).so $(PLUGIN_DIR)/main.go
 	go build -buildmode=plugin $(PLUGIN_DIR)/$(PLUGIN_NAME).go
 
-FILES = main/pg-grimm.txt
+FILES = pg-grimm.txt
 
 # Start the coord
 runc:
