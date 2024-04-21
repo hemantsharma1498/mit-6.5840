@@ -6,8 +6,10 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
-import "strconv"
+import (
+	"os"
+	"strconv"
+)
 
 //
 // example to show how to declare the arguments
@@ -27,9 +29,15 @@ type RegisterWorkerArgs struct {
 	WorkerID string
 }
 
+type MrJobStatus struct {
+	JobType string
+	Map     bool
+	Reduce  bool
+}
+
 type RegisterWorkerReply struct {
 	WorkerID string
-	Error int
+	Error    int
 }
 
 // Cook up a unique-ish UNIX-domain socket name
