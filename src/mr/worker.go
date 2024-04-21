@@ -84,7 +84,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		if err != nil {
 			fmt.Println("File not found: ", fileName)
 		}
-		content, err := os.ReadFile("../main/" + fileName)
+		content, err := os.ReadFile(fileName)
 		if err != nil {
 			fmt.Println(err)
 		}
