@@ -80,6 +80,10 @@ func Worker(mapf func(string, string) []KeyValue,
 			break
 		}
 		w.Filename = fileName
+		_, err := os.ReadFile(fileName)
+		if err != nil {
+			fmt.Println("File not found: ", fileName)
+		}
 		content, err := os.ReadFile("../main/" + fileName)
 		if err != nil {
 			fmt.Println(err)
