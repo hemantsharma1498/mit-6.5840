@@ -125,19 +125,6 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		}
 	}
 
-	// 0. metawork
-	//completed: input files, count getting printed
-	// 1. register workers
-	// give worker IDs to every new worker
-
-	//map task- worker + job info
-	//to start map task, require >0 registered workers
-
-	// 2. do map tasks
-
-	// 2*. ensure map phase finished
-
-	// 3. do reduce tasks (can optimize)
 	c.server()
 	return &c
 }
