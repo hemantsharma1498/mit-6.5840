@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"strconv"
 )
 
 // Map functions return a slice of KeyValue.
@@ -75,45 +76,15 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	for {
 		//Get file for map task
-		fileName, errorInt, error := GetMapTask(w.WorkerId)
+		filename, errorInt, error := GetMapTask(w.WorkerId)
 		if errorInt != 0 {
 			fmt.Println("Error: ", errorInt, error)
 		}
-		if len(fileName) == 0 {
+		if len(filename) == 0 {
 			break
 		}
-		w.Filename = fileName
-		_, err := os.ReadFile(fileName)
-		if err != nil {
-			fmt.Println("File not found: ", fileName)
-		}
-		content, err := os.ReadFile(fileName)
-		if err != nil {
-			fmt.Println(err)
-		}
-		kv := w.MapFunc(w.Filename, string(content))
-		files := make([][]KeyValue, w.nReduce)
-		for _, pair := range kv {
-			key := pair.Key
-			partition := ihash(key) % w.nReduce
-			files[partition] = append(files[partition], pair)
-		}
-		for partition, file := range files {
-			filename := "mr-" + string(w.WorkerId) + "-" + string(partition)
-			tempfile, err := os.Create(filename)
-			if err != nil {
-				fmt.Println(err)
-			}
-			defer tempfile.Close()
-			enc := json.NewEncoder(tempfile)
-			for _, kv := range file {
-				err := enc.Encode(&kv)
-				if err != nil {
-					fmt.Println(err)
-				}
-			}
-			tempfile.Close()
-		}
+		kv := MapTask(&w, filename)
+		SaveIntermediateFiles(&w, kv, w.nReduce)
 		SignalMapDone(&w)
 		jobStatus := JobStatus("Map")
 		if jobStatus {
@@ -124,7 +95,6 @@ func Worker(mapf func(string, string) []KeyValue,
 
 }
 
-// Register
 func Register(w *WorkerData) (int, int, error) {
 	args := RegisterWorkerReq{}
 	reply := RegisterWorkerRes{}
@@ -179,6 +149,45 @@ func JobStatus(job string) bool {
 		return true
 	}
 	return false
+}
+
+func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) {
+	files := make([][]KeyValue, nReduce)
+	for _, pair := range kv {
+		key := pair.Key
+		partition := ihash(key) % nReduce
+		files[partition] = append(files[partition], pair)
+	}
+	for partition, file := range files {
+		filename := "mr-" + strconv.Itoa(w.WorkerId) + "-" + strconv.Itoa(partition)
+		tempfile, err := os.Create(filename)
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer tempfile.Close()
+		enc := json.NewEncoder(tempfile)
+		for _, kv := range file {
+			err := enc.Encode(&kv)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+		tempfile.Close()
+	}
+}
+
+func MapTask(w *WorkerData, filename string) []KeyValue {
+	w.Filename = filename
+	_, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Println("File not found: ", filename)
+	}
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Println(err)
+	}
+	kv := w.MapFunc(w.Filename, string(content))
+	return kv
 }
 
 // example function to show how to make an RPC call to the coordinator.
