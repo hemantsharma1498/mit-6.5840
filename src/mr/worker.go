@@ -19,8 +19,9 @@ type MAPF func(string, string) []KeyValue
 type REDF func(string, []string) string
 
 type WorkerData struct {
-	WorkerId string
+	WorkerId int
 	Filename string
+	nReduce  int
 	MapFunc  MAPF
 	RedFunc  REDF
 }
@@ -57,16 +58,17 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 	w := WorkerData{}
 	// Your worker implementation here.
-
 	// uncomment to send the Example RPC to the coordinator.
 	// CallExample();
 
 	//Get worder ID from the coordinator
-	workerId, error := Register(&w)
+	workerId, nReduce, error := Register(&w)
 	if error != nil {
 		fmt.Println("Error encountered while getting worder ID: ", error)
 	}
+	nReduce = 10
 	w.WorkerId = workerId
+	w.nReduce = nReduce
 	w.MapFunc = mapf
 	w.RedFunc = reducef
 
@@ -89,47 +91,57 @@ func Worker(mapf func(string, string) []KeyValue,
 			fmt.Println(err)
 		}
 		kv := w.MapFunc(w.Filename, string(content))
-		var mapFilename = "mr-" + w.WorkerId + "-" + w.Filename
-		file, err := os.Create(mapFilename)
-		if err != nil {
-			fmt.Println(err)
+		files := make([][]KeyValue, w.nReduce)
+		for _, pair := range kv {
+			key := pair.Key
+			partition := ihash(key) % w.nReduce
+			files[partition] = append(files[partition], pair)
 		}
-		defer file.Close()
-		enc := json.NewEncoder(file)
-		for _, kv := range kv {
-			err := enc.Encode(&kv)
+		for partition, file := range files {
+			filename := "mr-" + string(w.WorkerId) + "-" + string(partition)
+			tempfile, err := os.Create(filename)
 			if err != nil {
 				fmt.Println(err)
 			}
+			defer tempfile.Close()
+			enc := json.NewEncoder(tempfile)
+			for _, kv := range file {
+				err := enc.Encode(&kv)
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
+			tempfile.Close()
 		}
-		file.Close()
 		SignalMapDone(&w)
 		jobStatus := JobStatus("Map")
 		if jobStatus {
 			break
 		}
 	}
+	fmt.Println("Map finished")
 
 }
 
 // Register
-func Register(w *WorkerData) (string, error) {
+func Register(w *WorkerData) (int, int, error) {
 	args := RegisterWorkerReq{}
 	reply := RegisterWorkerRes{}
 
 	ok := call("Coordinator.RegisterWorker", &args, &reply)
 	if ok {
-		// reply.Y should be 100.
-		w.WorkerId = reply.WorkerID
+		w.WorkerId = reply.WorkerId
+		fmt.Println(reply.nReduce)
+		w.nReduce = reply.nReduce
 		fmt.Printf("worker ID:  %v\n", w.WorkerId)
-		return w.WorkerId, nil
+		return w.WorkerId, w.nReduce, nil
 	} else {
 		fmt.Printf("call failed!\n")
-		return "", errors.New("could not get worker registered")
+		return -1, 0, errors.New("could not get worker registered")
 	}
 }
 
-func GetMapTask(workerId string) (string, int, error) {
+func GetMapTask(workerId int) (string, int, error) {
 	args := AssignFileReq{}
 	args.WorkerId = workerId
 	reply := AssignFileRes{}

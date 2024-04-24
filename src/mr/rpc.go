@@ -26,11 +26,12 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 type RegisterWorkerReq struct {
-	WorkerID string
+	WorkerId int
 }
 
 type RegisterWorkerRes struct {
-	WorkerID string
+	WorkerId int
+	nReduce  int
 	Error    int
 }
 
@@ -43,7 +44,7 @@ type SignalMapDoneReq struct {
 }
 
 type AssignFileReq struct {
-	WorkerId string
+	WorkerId int
 }
 
 type AssignFileRes struct {

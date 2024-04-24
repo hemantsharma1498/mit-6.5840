@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -18,15 +19,15 @@ type Coordinator struct {
 
 	// map worker table
 	mapPhaseMutex sync.Mutex
-	mapJobCount   int
-	mapPhase      map[string]string // file : workerID
+	mapFileCount  int
+	mapPhase      map[string]int // file : workerID
 
 	// reduce jobs list <reduceID> : <filelist>
 	intermediateMutex    sync.Mutex
 	intermediateFilelist map[int][]string
 }
 
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const letterBytes = "1234567890"
 
 func RandStringBytes(n int) string {
 	b := make([]byte, n)
@@ -47,7 +48,12 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWorkerRes) error {
-	reply.WorkerID = RandStringBytes(5)
+	id, err := strconv.Atoi(RandStringBytes(5))
+	if err != nil {
+		reply.WorkerId = id
+		reply.nReduce = c.nReduce
+		return nil
+	}
 	return nil
 }
 
@@ -55,7 +61,7 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 	c.mapPhaseMutex.Lock()
 	defer c.mapPhaseMutex.Unlock()
 	for k, v := range c.mapPhase {
-		if v == "0" {
+		if v == 0 {
 			c.mapPhase[k] = args.WorkerId
 			reply.Filename = k
 			fmt.Println("File given: ", reply.Filename)
@@ -113,13 +119,15 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	c.mapPhase = make(map[string]string, 1)
+	//hardcoding nReduce to be 1
+	c.mapPhase = make(map[string]int, 1)
 	c.nReduce = nReduce
+	c.mapFileCount = nReduce
 	fmt.Println("Coordinator spun up")
 	// Your code here.
 	i := 1
 	for _, file := range files {
-		c.mapPhase[file] = "0"
+		c.mapPhase[file] = 0
 		if i == 4 {
 			break
 		}
