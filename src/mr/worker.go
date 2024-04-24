@@ -66,6 +66,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	if error != nil {
 		fmt.Println("Error encountered while getting worder ID: ", error)
 	}
+	//@HEMANT-find why RPC is failing nReduce
 	nReduce = 10
 	w.WorkerId = workerId
 	w.nReduce = nReduce
