@@ -26,16 +26,6 @@ type Coordinator struct {
 	intermediateFilelist map[int][]string
 }
 
-const letterBytes = "1234567890"
-
-func RandStringBytes(n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
-	}
-	return string(b)
-}
-
 // Your code here -- RPC handlers for the worker to call.
 
 // an example RPC handler.
