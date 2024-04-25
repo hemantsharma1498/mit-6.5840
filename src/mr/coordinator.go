@@ -38,6 +38,11 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWorkerRes) error {
 	id := rand.Intn(20)
+	for _, v := range c.mapPhase {
+		if id == v {
+			id = rand.Intn(20)
+		}
+	}
 	reply.WorkerId = id
 	reply.NReduce = c.NReduce
 	return nil
