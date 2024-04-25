@@ -8,14 +8,13 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
-	"strconv"
 	"sync"
 )
 
 type Coordinator struct {
 	// Your definitions here.
 
-	nReduce int
+	NReduce int
 
 	// map worker table
 	mapPhaseMutex sync.Mutex
@@ -48,12 +47,9 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWorkerRes) error {
-	id, err := strconv.Atoi(RandStringBytes(5))
-	if err != nil {
-		reply.WorkerId = id
-		reply.nReduce = c.nReduce
-		return nil
-	}
+	id := rand.Intn(20)
+	reply.WorkerId = id
+	reply.NReduce = c.NReduce
 	return nil
 }
 
@@ -121,7 +117,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	//hardcoding nReduce to be 1
 	c.mapPhase = make(map[string]int, 1)
-	c.nReduce = nReduce
+	c.NReduce = nReduce
 	c.mapFileCount = nReduce
 	fmt.Println("Coordinator spun up")
 	// Your code here.

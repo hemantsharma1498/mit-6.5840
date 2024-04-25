@@ -31,7 +31,7 @@ type RegisterWorkerReq struct {
 
 type RegisterWorkerRes struct {
 	WorkerId int
-	nReduce  int
+	NReduce  int
 	Error    int
 }
 

@@ -22,7 +22,7 @@ type REDF func(string, []string) string
 type WorkerData struct {
 	WorkerId int
 	Filename string
-	nReduce  int
+	NReduce  int
 	MapFunc  MAPF
 	RedFunc  REDF
 }
@@ -58,19 +58,13 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 	w := WorkerData{}
-	// Your worker implementation here.
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample();
 
 	//Get worder ID from the coordinator
-	workerId, nReduce, error := Register(&w)
+	error := Register(&w)
 	if error != nil {
 		fmt.Println("Error encountered while getting worder ID: ", error)
 	}
 	//@HEMANT-find why RPC is failing nReduce
-	nReduce = 10
-	w.WorkerId = workerId
-	w.nReduce = nReduce
 	w.MapFunc = mapf
 	w.RedFunc = reducef
 
@@ -84,7 +78,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			break
 		}
 		kv := MapTask(&w, filename)
-		SaveIntermediateFiles(&w, kv, w.nReduce)
+		SaveIntermediateFiles(&w, kv, w.NReduce)
 		SignalMapDone(&w)
 		jobStatus := JobStatus("Map")
 		if jobStatus {
@@ -95,20 +89,19 @@ func Worker(mapf func(string, string) []KeyValue,
 
 }
 
-func Register(w *WorkerData) (int, int, error) {
+func Register(w *WorkerData) error {
 	args := RegisterWorkerReq{}
 	reply := RegisterWorkerRes{}
 
 	ok := call("Coordinator.RegisterWorker", &args, &reply)
 	if ok {
 		w.WorkerId = reply.WorkerId
-		fmt.Println(reply.nReduce)
-		w.nReduce = reply.nReduce
+		w.NReduce = reply.NReduce
 		fmt.Printf("worker ID:  %v\n", w.WorkerId)
-		return w.WorkerId, w.nReduce, nil
+		return nil
 	} else {
 		fmt.Printf("call failed!\n")
-		return -1, 0, errors.New("could not get worker registered")
+		return errors.New("could not get worker registered")
 	}
 }
 
