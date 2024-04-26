@@ -80,13 +80,21 @@ func Worker(mapf func(string, string) []KeyValue,
 		kv := MapTask(&w, filename)
 		SaveIntermediateFiles(&w, kv, w.NReduce)
 		SignalMapDone(&w)
-		jobStatus := JobStatus("Map")
-		if jobStatus {
+		idle := IdleWorker()
+		if !idle {
+			// time.Sleep(2000 * time.Millisecond)
+			continue
+		} else {
 			break
 		}
 	}
 	fmt.Println("Map finished")
 
+}
+
+func IdleWorker() bool {
+	jobStatus := JobStatus("Map")
+	return jobStatus
 }
 
 func Register(w *WorkerData) error {
