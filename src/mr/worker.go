@@ -9,6 +9,7 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Map functions return a slice of KeyValue.
@@ -16,15 +17,19 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+var taskId int
+
 type MAPF func(string, string) []KeyValue
 type REDF func(string, []string) string
 
 type WorkerData struct {
-	WorkerId int
-	Filename string
-	NReduce  int
-	MapFunc  MAPF
-	RedFunc  REDF
+	WorkerId          int
+	Filename          string
+	NReduce           int
+	IntermediateFiles []string
+	MapFunc           MAPF
+	RedFunc           REDF
 }
 
 type Server interface {
@@ -80,7 +85,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		kv := MapTask(&w, filename)
 		SaveIntermediateFiles(&w, kv, w.NReduce)
 		SignalMapDone(&w)
-		idle := IdleWorker()
+		idle := JobStatus("Map")
 		if !idle {
 			// time.Sleep(2000 * time.Millisecond)
 			continue
@@ -89,7 +94,34 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 	}
 	fmt.Println("Map finished")
+	err := SendPartitionNumbers(w.IntermediateFiles)
+	if err != nil {
+		fmt.Println(err)
+	}
 
+	for {
+		partition, taskIds, err := GetReduceTask(w.WorkerId)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if len(taskIds) < 0 {
+			fmt.Println("Failed getting taskIds")
+		}
+	}
+
+}
+
+func GetReduceTask(workerId int) (int, []int, error) {
+	args := GetReduceTaskReq{}
+	args.WorkerId = workerId
+	reply := GetReduceTaskRes{}
+
+	ok := call("Coordinator.AssignReduceTask", &args, &reply)
+	if ok {
+		fmt.Println("Reduce task id: ", reply.ReduceTaskId, " & partition number: ", reply.Partition)
+		return reply.Partition, reply.MapTaskIds, nil
+	}
+	return -1, nil, errors.New("failed to get reduce task")
 }
 
 func IdleWorker() bool {
@@ -119,6 +151,7 @@ func GetMapTask(workerId int) (string, int, error) {
 	reply := AssignFileRes{}
 	ok := call("Coordinator.AssignFile", &args, &reply)
 	if ok {
+		taskId = reply.TaskId
 		return reply.Filename, 0, nil
 	}
 	return "", 1, nil
@@ -127,6 +160,8 @@ func GetMapTask(workerId int) (string, int, error) {
 func SignalMapDone(w *WorkerData) {
 	args := SignalMapDoneReq{}
 	args.Filename = w.Filename
+	args.WorkerId = w.WorkerId
+	args.IntermediateFiles = w.IntermediateFiles
 	reply := SignalMapDoneRes{}
 	ok := call("Coordinator.MapJobUpdate", &args, &reply)
 	if ok {
@@ -143,7 +178,6 @@ func JobStatus(job string) bool {
 		fmt.Println("Error in checking ", job, " job status")
 	}
 	if args.JobType == "Map" && reply.IsFinished {
-		fmt.Println("Map job finished")
 		return true
 	} else if args.JobType == "Reduce" && reply.IsFinished {
 		fmt.Println("Reduce job finished")
@@ -152,7 +186,7 @@ func JobStatus(job string) bool {
 	return false
 }
 
-func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) {
+func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
 	files := make([][]KeyValue, nReduce)
 	for _, pair := range kv {
 		key := pair.Key
@@ -160,7 +194,7 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) {
 		files[partition] = append(files[partition], pair)
 	}
 	for partition, file := range files {
-		filename := "mr-" + strconv.Itoa(w.WorkerId) + "-" + strconv.Itoa(partition)
+		filename := "mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
 		tempfile, err := os.Create(filename)
 		if err != nil {
 			fmt.Println(err)
@@ -174,7 +208,36 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) {
 			}
 		}
 		tempfile.Close()
+		w.IntermediateFiles = append(w.IntermediateFiles, filename)
 	}
+	return nil
+}
+
+func SendPartitionNumbers(files []string) error {
+	args := SendPartitionsReq{}
+	res := SendPartitionsRes{}
+	partitions := make([]string, 1)
+	for _, file := range files {
+		split := strings.Split(file, "-")
+		partition := split[len(split)-1]
+		found := false
+		for _, p := range partitions {
+			if p == partition {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		partitions = append(partitions, partition)
+	}
+	args.Partitions = partitions
+	ok := call("Coordinator.ReceivePartitions", &args, &res)
+	if !ok {
+		return errors.New("sending partitions failed")
+	}
+	return nil
 }
 
 func MapTask(w *WorkerData, filename string) []KeyValue {

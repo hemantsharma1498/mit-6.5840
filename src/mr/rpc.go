@@ -39,8 +39,17 @@ type JobStatusReq struct {
 	JobType string
 }
 
+type SendPartitionsReq struct {
+	Partitions []string
+}
+
+type SendPartitionsRes struct {
+}
+
 type SignalMapDoneReq struct {
-	Filename string
+	Filename          string
+	WorkerId          int
+	IntermediateFiles []string
 }
 
 type AssignFileReq struct {
@@ -48,6 +57,7 @@ type AssignFileReq struct {
 }
 
 type AssignFileRes struct {
+	TaskId   int
 	Filename string
 }
 
@@ -56,6 +66,16 @@ type SignalMapDoneRes struct {
 
 type JobStatusRes struct {
 	IsFinished bool
+}
+
+type GetReduceTaskReq struct {
+	WorkerId int
+}
+
+type GetReduceTaskRes struct {
+	ReduceTaskId int
+	MapTaskIds   []int
+	Partition    int
 }
 
 // Cook up a unique-ish UNIX-domain socket name

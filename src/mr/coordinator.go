@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -19,10 +20,12 @@ type Coordinator struct {
 	// map worker table
 	mapPhaseMutex sync.Mutex
 	mapFileCount  int
+	taskIds       []int
 	mapPhase      map[string]int // file : workerID
 
 	// reduce jobs list <reduceID> : <filelist>
 	intermediateMutex    sync.Mutex
+	partitions           []string
 	intermediateFilelist map[int][]string
 }
 
@@ -55,10 +58,27 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 		if v == 0 {
 			c.mapPhase[k] = args.WorkerId
 			reply.Filename = k
+			reply.TaskId = c.taskIds[len(c.taskIds)-1]
+			if len(c.taskIds) > 0 {
+				c.taskIds = c.taskIds[:len(c.taskIds)-1]
+			}
 			fmt.Println("File given: ", reply.Filename)
 			break
 		}
 	}
+	return nil
+}
+
+func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceTaskRes) error {
+	partition, err := strconv.Atoi(c.partitions[len(c.partitions)-1])
+	if err != nil {
+		return err
+	}
+	if len(c.taskIds) > 0 {
+		c.taskIds = c.taskIds[:len(c.taskIds)-1]
+	}
+	reply.Partition = partition
+	reply.MapTaskIds = c.taskIds
 	return nil
 }
 
@@ -78,6 +98,23 @@ func (c *Coordinator) JobStatus(args *JobStatusReq, reply *JobStatusRes) error {
 		}
 	}
 	//Add for reduce, or remove reduce section if not required
+	return nil
+}
+
+func (c *Coordinator) ReceivePartitions(args *SendPartitionsReq, reply *SendPartitionsRes) error {
+	fmt.Println("current total partitions: ", args.Partitions)
+	for _, p := range args.Partitions {
+		found := false
+		for _, np := range c.partitions {
+			if p == np {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.partitions = append(c.partitions, p)
+		}
+	}
 	return nil
 }
 
@@ -116,14 +153,11 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.mapFileCount = nReduce
 	fmt.Println("Coordinator spun up")
 	// Your code here.
-	i := 1
 	for _, file := range files {
 		c.mapPhase[file] = 0
-		if i == 4 {
-			break
-		}
 	}
 
+	c.taskIds = rand.Perm(len(c.mapPhase))
 	c.server()
 	return &c
 }
