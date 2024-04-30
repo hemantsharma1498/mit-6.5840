@@ -9,6 +9,7 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -25,7 +26,6 @@ type Coordinator struct {
 
 	// reduce jobs list <reduceID> : <filelist>
 	intermediateMutex    sync.Mutex
-	partitions           []string
 	intermediateFilelist map[int][]string
 }
 
@@ -70,15 +70,11 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 }
 
 func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceTaskRes) error {
-	partition, err := strconv.Atoi(c.partitions[len(c.partitions)-1])
-	if err != nil {
-		return err
+	for k, v := range c.intermediateFilelist {
+		reply.IntermediateFiles = v
+		reply.ReduceTaskId = k
 	}
-	if len(c.taskIds) > 0 {
-		c.taskIds = c.taskIds[:len(c.taskIds)-1]
-	}
-	reply.Partition = partition
-	reply.MapTaskIds = c.taskIds
+	delete(c.intermediateFilelist, reply.ReduceTaskId)
 	return nil
 }
 
@@ -101,21 +97,37 @@ func (c *Coordinator) JobStatus(args *JobStatusReq, reply *JobStatusRes) error {
 	return nil
 }
 
-func (c *Coordinator) ReceivePartitions(args *SendPartitionsReq, reply *SendPartitionsRes) error {
-	fmt.Println("current total partitions: ", args.Partitions)
-	for _, p := range args.Partitions {
-		found := false
-		for _, np := range c.partitions {
-			if p == np {
-				found = true
-				break
+func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *SendPartitionsRes) error {
+	for _, file := range args.IntermediateFiles {
+		reduceTaskNumber, err := splitReduceIdAndFilename(file)
+		if err != nil {
+			return err
+		}
+		intermediateFiles := c.intermediateFilelist[reduceTaskNumber]
+		if len(intermediateFiles) > 0 {
+			found := false
+			for _, v := range intermediateFiles {
+				if v == file {
+					found = true
+				}
+			}
+			if !found {
+				c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
 			}
 		}
-		if !found {
-			c.partitions = append(c.partitions, p)
-		}
+		c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
 	}
 	return nil
+}
+
+func splitReduceIdAndFilename(filename string) (int, error) {
+	splitFilename := strings.Split(filename, "-")
+	reduceTaskNumber, err := strconv.Atoi(splitFilename[len(splitFilename)-1])
+	if err != nil {
+		return 0, err
+	}
+
+	return reduceTaskNumber, nil
 }
 
 // start a thread that listens for RPCs from worker.go

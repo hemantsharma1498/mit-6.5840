@@ -40,7 +40,7 @@ type JobStatusReq struct {
 }
 
 type SendPartitionsReq struct {
-	Partitions []string
+	IntermediateFiles []string
 }
 
 type SendPartitionsRes struct {
@@ -73,9 +73,8 @@ type GetReduceTaskReq struct {
 }
 
 type GetReduceTaskRes struct {
-	ReduceTaskId int
-	MapTaskIds   []int
-	Partition    int
+	ReduceTaskId      int
+	IntermediateFiles []string
 }
 
 // Cook up a unique-ish UNIX-domain socket name

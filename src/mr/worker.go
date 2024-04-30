@@ -9,7 +9,6 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
-	"strings"
 )
 
 // Map functions return a slice of KeyValue.
@@ -94,32 +93,36 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 	}
 	fmt.Println("Map finished")
-	err := SendPartitionNumbers(w.IntermediateFiles)
+	err := SendIntermediateFiles(w.IntermediateFiles)
 	if err != nil {
 		fmt.Println(err)
 	}
 
 	for {
-		partition, taskIds, err := GetReduceTask(w.WorkerId)
+		reduceTaskId, intermediateFiles, err := GetReduceTask(w.WorkerId)
 		if err != nil {
 			fmt.Println(err)
 		}
-		if len(taskIds) < 0 {
-			fmt.Println("Failed getting taskIds")
+		if len(intermediateFiles) == 0 {
+			fmt.Println("Failed getting intermediate files for reduce task: ", reduceTaskId)
 		}
+
+		// for _, v := range intermediateFiles {
+
+		// }
 	}
 
 }
 
-func GetReduceTask(workerId int) (int, []int, error) {
+func GetReduceTask(workerId int) (int, []string, error) {
 	args := GetReduceTaskReq{}
 	args.WorkerId = workerId
 	reply := GetReduceTaskRes{}
 
 	ok := call("Coordinator.AssignReduceTask", &args, &reply)
 	if ok {
-		fmt.Println("Reduce task id: ", reply.ReduceTaskId, " & partition number: ", reply.Partition)
-		return reply.Partition, reply.MapTaskIds, nil
+		fmt.Println("Reduce task id: ", reply.ReduceTaskId, " & reduce task id: ", reply.ReduceTaskId)
+		return reply.ReduceTaskId, reply.IntermediateFiles, nil
 	}
 	return -1, nil, errors.New("failed to get reduce task")
 }
@@ -213,27 +216,11 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
 	return nil
 }
 
-func SendPartitionNumbers(files []string) error {
+func SendIntermediateFiles(files []string) error {
 	args := SendPartitionsReq{}
 	res := SendPartitionsRes{}
-	partitions := make([]string, 1)
-	for _, file := range files {
-		split := strings.Split(file, "-")
-		partition := split[len(split)-1]
-		found := false
-		for _, p := range partitions {
-			if p == partition {
-				found = true
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		partitions = append(partitions, partition)
-	}
-	args.Partitions = partitions
-	ok := call("Coordinator.ReceivePartitions", &args, &res)
+	args.IntermediateFiles = files
+	ok := call("Coordinator.ReceiveIntermediateFiles", &args, &res)
 	if !ok {
 		return errors.New("sending partitions failed")
 	}
