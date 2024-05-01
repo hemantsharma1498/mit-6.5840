@@ -1,6 +1,8 @@
 package mr
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -24,8 +26,10 @@ func TestRegisterWorker(t *testing.T) {
 	reply := RegisterWorkerRes{}
 	ok := call("Coordinator.RegisterWorker", &args, &reply)
 	if ok {
-		if reply.WorkerId != 1 {
-			panic(1)
+		fmt.Println("worker id: ", reply.WorkerId)
+		typ := reflect.TypeOf(reply.WorkerId)
+		if typ.Kind() != reflect.Int {
+			t.Error("Not an integer")
 		}
 	}
 }

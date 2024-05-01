@@ -40,6 +40,7 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWorkerRes) error {
+	//@HEMANT change randomization to lamport's bakery algorithm
 	id := rand.Intn(20)
 	for _, v := range c.mapPhase {
 		if id == v {
