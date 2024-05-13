@@ -13,6 +13,8 @@ import (
 	"sync"
 )
 
+var id int = 0
+
 type Coordinator struct {
 	// Your definitions here.
 
@@ -40,31 +42,30 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWorkerRes) error {
-	//@HEMANT change randomization to lamport's bakery algorithm
-	id := rand.Intn(20)
-	for _, v := range c.mapPhase {
-		if id == v {
-			id = rand.Intn(20)
-		}
-	}
+	c.mapPhaseMutex.Lock()
+	defer c.mapPhaseMutex.Unlock()
 	reply.WorkerId = id
 	reply.NReduce = c.NReduce
+	id++
 	return nil
 }
 
 func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) error {
 	c.mapPhaseMutex.Lock()
 	defer c.mapPhaseMutex.Unlock()
-	for k, v := range c.mapPhase {
-		if v == 0 {
-			c.mapPhase[k] = args.WorkerId
-			reply.Filename = k
-			reply.TaskId = c.taskIds[len(c.taskIds)-1]
-			if len(c.taskIds) > 0 {
-				c.taskIds = c.taskIds[:len(c.taskIds)-1]
+	if len(c.taskIds) > 0 {
+		for k, v := range c.mapPhase {
+			if v == 0 {
+				c.mapPhase[k] = args.WorkerId
+				reply.Filename = k
+				fmt.Println(c.taskIds, len(c.taskIds)-1)
+				reply.TaskId = c.taskIds[len(c.taskIds)-1]
+				if len(c.taskIds) > 0 {
+					c.taskIds = c.taskIds[:len(c.taskIds)-1]
+				}
+				fmt.Println("File given: ", reply.Filename)
+				break
 			}
-			fmt.Println("File given: ", reply.Filename)
-			break
 		}
 	}
 	return nil
@@ -112,12 +113,15 @@ func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *S
 					found = true
 				}
 			}
+			fmt.Println(found)
 			if !found {
 				c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
 			}
+		} else {
+			c.intermediateFilelist[reduceTaskNumber] = []string{file}
 		}
-		c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
 	}
+	fmt.Println(c.intermediateFilelist)
 	return nil
 }
 
@@ -162,6 +166,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	//hardcoding nReduce to be 1
 	c.mapPhase = make(map[string]int, 1)
+	c.intermediateFilelist = make(map[int][]string, 1)
 	c.NReduce = nReduce
 	c.mapFileCount = nReduce
 	fmt.Println("Coordinator spun up")

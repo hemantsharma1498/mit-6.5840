@@ -99,13 +99,13 @@ func Worker(mapf func(string, string) []KeyValue,
 	}
 
 	for {
-		reduceTaskId, intermediateFiles, err := GetReduceTask(w.WorkerId)
-		if err != nil {
-			fmt.Println(err)
-		}
-		if len(intermediateFiles) == 0 {
-			fmt.Println("Failed getting intermediate files for reduce task: ", reduceTaskId)
-		}
+		// reduceTaskId, intermediateFiles, err := GetReduceTask(w.WorkerId)
+		// if err != nil {
+		// 	fmt.Println(err)
+		// }
+		// if len(intermediateFiles) == 0 {
+		// 	fmt.Println("Failed getting intermediate files for reduce task: ", reduceTaskId)
+		// }
 
 		// for _, v := range intermediateFiles {
 
