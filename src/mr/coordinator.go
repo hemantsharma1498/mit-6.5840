@@ -72,11 +72,16 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 }
 
 func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceTaskRes) error {
-	for k, v := range c.intermediateFilelist {
-		reply.IntermediateFiles = v
-		reply.ReduceTaskId = k
+	if len(c.intermediateFilelist) > 0 {
+		for k, v := range c.intermediateFilelist {
+			reply.IntermediateFiles = v
+			reply.ReduceTaskId = k
+			break
+		}
+		delete(c.intermediateFilelist, reply.ReduceTaskId)
+	} else {
+		reply.Message = 1
 	}
-	delete(c.intermediateFilelist, reply.ReduceTaskId)
 	return nil
 }
 
@@ -86,16 +91,9 @@ func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneR
 }
 
 func (c *Coordinator) JobStatus(args *JobStatusReq, reply *JobStatusRes) error {
-	if args.JobType == "Map" {
-		if len(c.mapPhase) == 0 {
-			reply.IsFinished = true
-			return nil
-		} else {
-			reply.IsFinished = false
-			return nil
-		}
+	if len(c.mapPhase) == 0 {
+		reply.IsFinished = true
 	}
-	//Add for reduce, or remove reduce section if not required
 	return nil
 }
 
@@ -121,7 +119,6 @@ func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *S
 			c.intermediateFilelist[reduceTaskNumber] = []string{file}
 		}
 	}
-	fmt.Println(c.intermediateFilelist)
 	return nil
 }
 
@@ -153,8 +150,6 @@ func (c *Coordinator) server() {
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	ret := false
-
-	// Your code here.
 
 	return ret
 }
