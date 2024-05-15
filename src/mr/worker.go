@@ -95,7 +95,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		SignalMapDone(&w)
 		time.Sleep(300 * time.Millisecond)
 	}
-	fmt.Println("Map finished")
+	fmt.Println("Worker ID: ", w.WorkerId, "Map finished")
 	err := SendIntermediateFiles(w.IntermediateFiles)
 	if err != nil {
 		fmt.Println(err)
@@ -135,7 +135,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			fmt.Println(err)
 		}
 	}
-	fmt.Println("Reduce done")
+	fmt.Println("Worker ID: ", w.WorkerId, "Reduce done")
 	os.Exit(0)
 }
 
@@ -210,10 +210,7 @@ func SignalMapDone(w *WorkerData) {
 	args.WorkerId = w.WorkerId
 	args.IntermediateFiles = w.IntermediateFiles
 	reply := SignalMapDoneRes{}
-	ok := call("Coordinator.MapJobUpdate", &args, &reply)
-	if ok {
-		fmt.Println("map job closed for file ", w.Filename)
-	}
+	call("Coordinator.MapJobUpdate", &args, &reply)
 }
 
 func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {

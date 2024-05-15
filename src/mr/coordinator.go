@@ -56,7 +56,6 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 		if v == 0 {
 			c.mapPhase[k] = args.WorkerId
 			reply.Filename = k
-			fmt.Println("File given: ", reply.Filename, args.WorkerId)
 			break
 		}
 	}
@@ -154,10 +153,6 @@ func (c *Coordinator) Done() bool {
 
 func (c *Coordinator) MapReduceDone() bool {
 	ret := false
-	fmt.Println(len(c.mapPhase), len(c.intermediateFilelist))
-	if len(c.mapPhase) > 0 {
-		fmt.Println(c.mapPhase)
-	}
 	if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
 		ret = true
 	}
@@ -180,7 +175,6 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		c.mapPhase[file] = 0
 	}
 
-	fmt.Println(len(c.mapPhase))
 	c.server()
 
 	for {
