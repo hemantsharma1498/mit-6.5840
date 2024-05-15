@@ -95,7 +95,6 @@ func Worker(mapf func(string, string) []KeyValue,
 		SignalMapDone(&w)
 		time.Sleep(300 * time.Millisecond)
 	}
-	fmt.Println("Worker ID: ", w.WorkerId, "Map finished")
 	err := SendIntermediateFiles(w.IntermediateFiles)
 	if err != nil {
 		fmt.Println(err)
@@ -135,7 +134,6 @@ func Worker(mapf func(string, string) []KeyValue,
 			fmt.Println(err)
 		}
 	}
-	fmt.Println("Worker ID: ", w.WorkerId, "Reduce done")
 	os.Exit(0)
 }
 
