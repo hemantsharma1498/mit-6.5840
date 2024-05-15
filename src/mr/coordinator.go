@@ -3,7 +3,6 @@ package mr
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -24,7 +23,6 @@ type Coordinator struct {
 	// map worker table
 	mapPhaseMutex sync.Mutex
 	mapFileCount  int
-	taskIds       []int
 	mapPhase      map[string]int // file : workerID
 
 	// reduce jobs list <reduceID> : <filelist>
@@ -54,17 +52,12 @@ func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWor
 func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) error {
 	c.mapPhaseMutex.Lock()
 	defer c.mapPhaseMutex.Unlock()
-	if len(c.mapPhase) > 0 {
-		for k, v := range c.mapPhase {
-			if v == 0 {
-				c.mapPhase[k] = args.WorkerId
-				reply.Filename = k
-				if len(c.taskIds) > 0 {
-					c.taskIds = c.taskIds[:len(c.taskIds)-1]
-				}
-				fmt.Println("File given: ", reply.Filename, args.WorkerId)
-				break
-			}
+	for k, v := range c.mapPhase {
+		if v == 0 {
+			c.mapPhase[k] = args.WorkerId
+			reply.Filename = k
+			fmt.Println("File given: ", reply.Filename, args.WorkerId)
+			break
 		}
 	}
 	return nil
@@ -99,6 +92,8 @@ func (c *Coordinator) JobStatus(args *JobStatusReq, reply *JobStatusRes) error {
 }
 
 func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *SendPartitionsRes) error {
+	c.intermediateMutex.Lock()
+	defer c.intermediateMutex.Unlock()
 	for _, file := range args.IntermediateFiles {
 		reduceTaskNumber, err := splitReduceIdAndFilename(file)
 		if err != nil {
@@ -185,7 +180,6 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		c.mapPhase[file] = 0
 	}
 
-	c.taskIds = rand.Perm(len(c.mapPhase))
 	fmt.Println(len(c.mapPhase))
 	c.server()
 

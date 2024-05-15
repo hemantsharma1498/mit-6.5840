@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -92,13 +93,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		kv := MapTask(&w, filename)
 		SaveIntermediateFiles(&w, kv, w.NReduce)
 		SignalMapDone(&w)
-		idle := JobStatus()
-		if !idle {
-			// time.Sleep(2000 * time.Millisecond)
-			continue
-		} else {
-			break
-		}
+		time.Sleep(300 * time.Millisecond)
 	}
 	fmt.Println("Map finished")
 	err := SendIntermediateFiles(w.IntermediateFiles)
@@ -140,6 +135,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			fmt.Println(err)
 		}
 	}
+	fmt.Println("Reduce done")
 	os.Exit(0)
 }
 
@@ -218,19 +214,6 @@ func SignalMapDone(w *WorkerData) {
 	if ok {
 		fmt.Println("map job closed for file ", w.Filename)
 	}
-}
-
-func JobStatus() bool {
-	args := JobStatusReq{}
-	reply := JobStatusRes{}
-	ok := call("Coordinator.JobStatus", &args, &reply)
-	if !ok {
-		fmt.Println("Error in checking Map task status")
-	}
-	if reply.IsFinished {
-		return true
-	}
-	return false
 }
 
 func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
