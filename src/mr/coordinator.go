@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var id int = 0
@@ -53,17 +54,15 @@ func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWor
 func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) error {
 	c.mapPhaseMutex.Lock()
 	defer c.mapPhaseMutex.Unlock()
-	if len(c.taskIds) > 0 {
+	if len(c.mapPhase) > 0 {
 		for k, v := range c.mapPhase {
 			if v == 0 {
 				c.mapPhase[k] = args.WorkerId
 				reply.Filename = k
-				fmt.Println(c.taskIds, len(c.taskIds)-1)
-				reply.TaskId = c.taskIds[len(c.taskIds)-1]
 				if len(c.taskIds) > 0 {
 					c.taskIds = c.taskIds[:len(c.taskIds)-1]
 				}
-				fmt.Println("File given: ", reply.Filename)
+				fmt.Println("File given: ", reply.Filename, args.WorkerId)
 				break
 			}
 		}
@@ -86,6 +85,8 @@ func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceT
 }
 
 func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneRes) error {
+	c.mapPhaseMutex.Lock()
+	defer c.mapPhaseMutex.Unlock()
 	delete(c.mapPhase, args.Filename)
 	return nil
 }
@@ -111,7 +112,6 @@ func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *S
 					found = true
 				}
 			}
-			fmt.Println(found)
 			if !found {
 				c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
 			}
@@ -150,7 +150,22 @@ func (c *Coordinator) server() {
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	ret := false
+	// fmt.Println(len(c.mapPhase), len(c.intermediateFilelist))
+	// if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
+	// 	ret = true
+	// }
+	return ret
+}
 
+func (c *Coordinator) MapReduceDone() bool {
+	ret := false
+	fmt.Println(len(c.mapPhase), len(c.intermediateFilelist))
+	if len(c.mapPhase) > 0 {
+		fmt.Println(c.mapPhase)
+	}
+	if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
+		ret = true
+	}
 	return ret
 }
 
@@ -171,6 +186,15 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	}
 
 	c.taskIds = rand.Perm(len(c.mapPhase))
+	fmt.Println(len(c.mapPhase))
 	c.server()
+
+	for {
+		done := c.MapReduceDone()
+		time.Sleep(2000 * time.Millisecond)
+		if done {
+			os.Exit(0)
+		}
+	}
 	return &c
 }
