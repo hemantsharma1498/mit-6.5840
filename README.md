@@ -4,6 +4,6 @@
 - [x] Read prompt to ensure no nuances are missed
 - [x] Modify worker to have nReduce intermediate files per map event
 - [x] Ensure map phase finished
-- [ ] Configure to work with nReduce=1
-- [ ] Do nReduce tasks (can optimize)
+- [x] Configure to work with nReduce=1
+- [x] Do nReduce tasks (can optimize)
 - [ ] Write tests for everything
