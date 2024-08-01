@@ -68,6 +68,12 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+/*
+func newWorker() Server {
+	return &WorkerData{}
+}
+*/
+
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
@@ -182,7 +188,6 @@ func Register(w *WorkerData) error {
 	if ok {
 		w.WorkerId = reply.WorkerId
 		w.NReduce = reply.NReduce
-		fmt.Printf("worker ID:  %v\n", w.WorkerId)
 		return nil
 	} else {
 		fmt.Printf("call failed!\n")

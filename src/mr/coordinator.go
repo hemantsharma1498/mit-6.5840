@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -169,7 +168,6 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.intermediateFilelist = make(map[int][]string, 1)
 	c.NReduce = nReduce
 	c.mapFileCount = nReduce
-	fmt.Println("Coordinator spun up")
 	// Your code here.
 	for _, file := range files {
 		c.mapPhase[file] = 0
