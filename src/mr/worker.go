@@ -41,22 +41,6 @@ type WorkerData struct {
 	RedFunc           REDF
 }
 
-type Server interface {
-	// Locates coordinator and gets workerID needed for tasks
-	Register() (string, error)
-
-	// Returns map filename when given worker ID
-	GetMapTask(workerId string) (string, int, error)
-
-	// Persist map jobs
-	SignalMapDone(filename string)
-
-	MapJobStatus(jobType string)
-
-	// get reduce file list and reduce job ID
-	GetReduceTask() (int, []string, error)
-}
-
 //add a register function
 // store worker ID given to every new worker
 
@@ -67,12 +51,6 @@ func ihash(key string) int {
 	h.Write([]byte(key))
 	return int(h.Sum32() & 0x7fffffff)
 }
-
-/*
-func newWorker() Server {
-	return &WorkerData{}
-}
-*/
 
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
