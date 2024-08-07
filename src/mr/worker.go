@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"sort"
 	"strconv"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -16,6 +18,14 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 var taskId int
 
@@ -29,22 +39,6 @@ type WorkerData struct {
 	IntermediateFiles []string
 	MapFunc           MAPF
 	RedFunc           REDF
-}
-
-type Server interface {
-	// Locates coordinator and gets workerID needed for tasks
-	Register() (string, error)
-
-	// Returns map filename when given worker ID
-	GetMapTask(workerId string) (string, int, error)
-
-	// Persist map jobs
-	SignalMapDone(filename string)
-
-	MapJobStatus(jobType string)
-
-	// get reduce file list and reduce job ID
-	GetReduceTask() (int, []string, error)
 }
 
 //add a register function
@@ -68,7 +62,6 @@ func Worker(mapf func(string, string) []KeyValue,
 	if error != nil {
 		fmt.Println("Error encountered while getting worder ID: ", error)
 	}
-	//@HEMANT-find why RPC is failing nReduce
 	w.MapFunc = mapf
 	w.RedFunc = reducef
 
@@ -81,55 +74,89 @@ func Worker(mapf func(string, string) []KeyValue,
 		if len(filename) == 0 {
 			break
 		}
-		kv := MapTask(&w, filename)
+		w.Filename = filename
+		kv := MapTask(&w)
 		SaveIntermediateFiles(&w, kv, w.NReduce)
 		SignalMapDone(&w)
-		idle := JobStatus("Map")
-		if !idle {
-			// time.Sleep(2000 * time.Millisecond)
-			continue
-		} else {
-			break
-		}
+		time.Sleep(300 * time.Millisecond)
 	}
-	fmt.Println("Map finished")
 	err := SendIntermediateFiles(w.IntermediateFiles)
 	if err != nil {
 		fmt.Println(err)
 	}
 
 	for {
-		reduceTaskId, intermediateFiles, err := GetReduceTask(w.WorkerId)
+		reduceTaskId, intermediateFiles, reduceStatus, err := GetReduceTask(w.WorkerId)
 		if err != nil {
 			fmt.Println(err)
 		}
-		if len(intermediateFiles) == 0 {
+		if reduceStatus == 1 {
+			break
+		}
+		if len(intermediateFiles) == 0 && reduceStatus == 0 {
 			fmt.Println("Failed getting intermediate files for reduce task: ", reduceTaskId)
 		}
 
-		// for _, v := range intermediateFiles {
+		intermediate := []KeyValue{}
+		for _, v := range intermediateFiles {
+			file, err := os.Open(v)
+			if err != nil {
+				fmt.Println(err)
+			}
+			dec := json.NewDecoder(file)
+			for {
+				var kv KeyValue
+				if err := dec.Decode(&kv); err != nil {
+					break
+				}
+				intermediate = append(intermediate, kv)
+			}
+		}
 
-		// }
+		sort.Sort(ByKey(intermediate))
+		err = runReduce(&w, intermediate, reduceTaskId)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
-
+	os.Exit(0)
 }
 
-func GetReduceTask(workerId int) (int, []string, error) {
+func runReduce(w *WorkerData, intermediate []KeyValue, reduceTaskId int) error {
+	reduceTaskIdString := strconv.Itoa(reduceTaskId)
+	outputFile, err := os.Create("mr-out-" + reduceTaskIdString)
+	if err != nil {
+		return err
+	}
+	i := 0
+	for i < len(intermediate) {
+		j := i + 1
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		output := w.RedFunc(intermediate[i].Key, values)
+
+		// this is the correct format for each line of Reduce output.
+		fmt.Fprintf(outputFile, "%v %v\n", intermediate[i].Key, output)
+		i = j
+	}
+	return nil
+}
+
+func GetReduceTask(workerId int) (int, []string, int, error) {
 	args := GetReduceTaskReq{}
 	args.WorkerId = workerId
 	reply := GetReduceTaskRes{}
 
 	ok := call("Coordinator.AssignReduceTask", &args, &reply)
 	if ok {
-		fmt.Println("Reduce task id: ", reply.ReduceTaskId, " & reduce task id: ", reply.ReduceTaskId)
-		return reply.ReduceTaskId, reply.IntermediateFiles, nil
+		return reply.ReduceTaskId, reply.IntermediateFiles, reply.Message, nil
 	}
-	return -1, nil, errors.New("failed to get reduce task")
-}
-
-func IdleWorker() bool {
-	jobStatus := JobStatus("Map")
-	return jobStatus
+	return -1, nil, reply.Message, errors.New("failed to get reduce task")
 }
 
 func Register(w *WorkerData) error {
@@ -140,7 +167,6 @@ func Register(w *WorkerData) error {
 	if ok {
 		w.WorkerId = reply.WorkerId
 		w.NReduce = reply.NReduce
-		fmt.Printf("worker ID:  %v\n", w.WorkerId)
 		return nil
 	} else {
 		fmt.Printf("call failed!\n")
@@ -149,8 +175,7 @@ func Register(w *WorkerData) error {
 }
 
 func GetMapTask(workerId int) (string, int, error) {
-	args := AssignFileReq{}
-	args.WorkerId = workerId
+	args := AssignFileReq{WorkerId: workerId}
 	reply := AssignFileRes{}
 	ok := call("Coordinator.AssignFile", &args, &reply)
 	if ok {
@@ -166,27 +191,7 @@ func SignalMapDone(w *WorkerData) {
 	args.WorkerId = w.WorkerId
 	args.IntermediateFiles = w.IntermediateFiles
 	reply := SignalMapDoneRes{}
-	ok := call("Coordinator.MapJobUpdate", &args, &reply)
-	if ok {
-		fmt.Println("map job closed for file ", w.Filename)
-	}
-}
-
-func JobStatus(job string) bool {
-	args := JobStatusReq{}
-	args.JobType = job
-	reply := JobStatusRes{}
-	ok := call("Coordinator.JobStatus", &args, &reply)
-	if !ok {
-		fmt.Println("Error in checking ", job, " job status")
-	}
-	if args.JobType == "Map" && reply.IsFinished {
-		return true
-	} else if args.JobType == "Reduce" && reply.IsFinished {
-		fmt.Println("Reduce job finished")
-		return true
-	}
-	return false
+	call("Coordinator.MapJobUpdate", &args, &reply)
 }
 
 func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
@@ -197,12 +202,11 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
 		files[partition] = append(files[partition], pair)
 	}
 	for partition, file := range files {
-		filename := "mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
-		tempfile, err := os.Create(filename)
+		oldFilename := "temp-mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
+		tempfile, err := os.Create(oldFilename)
 		if err != nil {
 			fmt.Println(err)
 		}
-		defer tempfile.Close()
 		enc := json.NewEncoder(tempfile)
 		for _, kv := range file {
 			err := enc.Encode(&kv)
@@ -210,8 +214,11 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
 				fmt.Println(err)
 			}
 		}
-		tempfile.Close()
-		w.IntermediateFiles = append(w.IntermediateFiles, filename)
+		newFileName := "mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
+		if err := os.Rename(oldFilename, newFileName); err != nil {
+			fmt.Println(err)
+		}
+		w.IntermediateFiles = append(w.IntermediateFiles, newFileName)
 	}
 	return nil
 }
@@ -227,13 +234,12 @@ func SendIntermediateFiles(files []string) error {
 	return nil
 }
 
-func MapTask(w *WorkerData, filename string) []KeyValue {
-	w.Filename = filename
-	_, err := os.ReadFile(filename)
+func MapTask(w *WorkerData) []KeyValue {
+	_, err := os.ReadFile(w.Filename)
 	if err != nil {
-		fmt.Println("File not found: ", filename)
+		fmt.Println("File not found: ", w.Filename)
 	}
-	content, err := os.ReadFile(filename)
+	content, err := os.ReadFile(w.Filename)
 	if err != nil {
 		fmt.Println(err)
 	}

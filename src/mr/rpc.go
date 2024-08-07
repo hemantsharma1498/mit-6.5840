@@ -36,7 +36,6 @@ type RegisterWorkerRes struct {
 }
 
 type JobStatusReq struct {
-	JobType string
 }
 
 type SendPartitionsReq struct {
@@ -75,6 +74,7 @@ type GetReduceTaskReq struct {
 type GetReduceTaskRes struct {
 	ReduceTaskId      int
 	IntermediateFiles []string
+	Message           int
 }
 
 // Cook up a unique-ish UNIX-domain socket name

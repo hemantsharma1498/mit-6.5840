@@ -3,7 +3,6 @@ package mr
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -11,7 +10,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
+
+var id int = 0
+
+var mrtaskId int = 0
+
+type File struct {
+	FileName  string
+	MapTaskId int
+	Status    string
+}
 
 type Coordinator struct {
 	// Your definitions here.
@@ -20,9 +30,7 @@ type Coordinator struct {
 
 	// map worker table
 	mapPhaseMutex sync.Mutex
-	mapFileCount  int
-	taskIds       []int
-	mapPhase      map[string]int // file : workerID
+	mapPhase      map[File]int // file : workerID
 
 	// reduce jobs list <reduceID> : <filelist>
 	intermediateMutex    sync.Mutex
@@ -40,30 +48,31 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWorkerRes) error {
-	//@HEMANT change randomization to lamport's bakery algorithm
-	id := rand.Intn(20)
-	for _, v := range c.mapPhase {
-		if id == v {
-			id = rand.Intn(20)
-		}
-	}
+	c.mapPhaseMutex.Lock()
+	defer c.mapPhaseMutex.Unlock()
 	reply.WorkerId = id
 	reply.NReduce = c.NReduce
+	id++
 	return nil
+}
+
+func (c *Coordinator) WorkerTimeoutChecker(file *File) {
+	time.Sleep(time.Second * 10)
+	if file.Status != "COMPLETED" {
+		file.Status = "IDLE"
+	}
 }
 
 func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) error {
 	c.mapPhaseMutex.Lock()
 	defer c.mapPhaseMutex.Unlock()
 	for k, v := range c.mapPhase {
-		if v == 0 {
+		if v == -1 && k.Status == "IDLE" {
 			c.mapPhase[k] = args.WorkerId
-			reply.Filename = k
-			reply.TaskId = c.taskIds[len(c.taskIds)-1]
-			if len(c.taskIds) > 0 {
-				c.taskIds = c.taskIds[:len(c.taskIds)-1]
-			}
-			fmt.Println("File given: ", reply.Filename)
+			reply.Filename = k.FileName
+			reply.TaskId = mrtaskId
+			go c.WorkerTimeoutChecker(&k)
+			mrtaskId++
 			break
 		}
 	}
@@ -71,34 +80,41 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 }
 
 func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceTaskRes) error {
-	for k, v := range c.intermediateFilelist {
-		reply.IntermediateFiles = v
-		reply.ReduceTaskId = k
+	if len(c.intermediateFilelist) > 0 {
+		for k, v := range c.intermediateFilelist {
+			reply.IntermediateFiles = v
+			reply.ReduceTaskId = k
+			break
+		}
+		delete(c.intermediateFilelist, reply.ReduceTaskId)
+	} else {
+		reply.Message = 1
 	}
-	delete(c.intermediateFilelist, reply.ReduceTaskId)
 	return nil
 }
 
 func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneRes) error {
-	delete(c.mapPhase, args.Filename)
+	c.mapPhaseMutex.Lock()
+	for file := range c.mapPhase {
+		if file.FileName == args.Filename {
+			delete(c.mapPhase, file)
+			break
+		}
+	}
+	c.mapPhaseMutex.Unlock()
 	return nil
 }
 
 func (c *Coordinator) JobStatus(args *JobStatusReq, reply *JobStatusRes) error {
-	if args.JobType == "Map" {
-		if len(c.mapPhase) == 0 {
-			reply.IsFinished = true
-			return nil
-		} else {
-			reply.IsFinished = false
-			return nil
-		}
+	if len(c.mapPhase) == 0 {
+		reply.IsFinished = true
 	}
-	//Add for reduce, or remove reduce section if not required
 	return nil
 }
 
 func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *SendPartitionsRes) error {
+	c.intermediateMutex.Lock()
+	defer c.intermediateMutex.Unlock()
 	for _, file := range args.IntermediateFiles {
 		reduceTaskNumber, err := splitReduceIdAndFilename(file)
 		if err != nil {
@@ -115,15 +131,16 @@ func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *S
 			if !found {
 				c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
 			}
+		} else {
+			c.intermediateFilelist[reduceTaskNumber] = []string{file}
 		}
-		c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
 	}
 	return nil
 }
 
 func splitReduceIdAndFilename(filename string) (int, error) {
 	splitFilename := strings.Split(filename, "-")
-	reduceTaskNumber, err := strconv.Atoi(splitFilename[len(splitFilename)-1])
+	reduceTaskNumber, err := strconv.Atoi(strings.Split(filename, "-")[len(splitFilename)-1])
 	if err != nil {
 		return 0, err
 	}
@@ -149,9 +166,18 @@ func (c *Coordinator) server() {
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	ret := false
+	fmt.Println(len(c.mapPhase), len(c.intermediateFilelist))
+	if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
+		ret = true
+	}
+	return ret
+}
 
-	// Your code here.
-
+func (c *Coordinator) MapReduceDone() bool {
+	ret := false
+	if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
+		ret = true
+	}
 	return ret
 }
 
@@ -160,17 +186,24 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	//hardcoding nReduce to be 1
-	c.mapPhase = make(map[string]int, 1)
+	c.mapPhase = make(map[File]int, 1)
+	c.intermediateFilelist = make(map[int][]string, 1)
 	c.NReduce = nReduce
-	c.mapFileCount = nReduce
-	fmt.Println("Coordinator spun up")
 	// Your code here.
 	for _, file := range files {
-		c.mapPhase[file] = 0
+		newFile := &File{FileName: file, Status: "IDLE", MapTaskId: -1}
+		c.mapPhase[*newFile] = -1
 	}
 
-	c.taskIds = rand.Perm(len(c.mapPhase))
 	c.server()
+
+	for {
+		done := c.MapReduceDone()
+		time.Sleep(2000 * time.Millisecond)
+		if done {
+			break
+		}
+	}
+	os.Exit(0)
 	return &c
 }
