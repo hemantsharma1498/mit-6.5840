@@ -74,7 +74,8 @@ func Worker(mapf func(string, string) []KeyValue,
 		if len(filename) == 0 {
 			break
 		}
-		kv := MapTask(&w, filename)
+		w.Filename = filename
+		kv := MapTask(&w)
 		SaveIntermediateFiles(&w, kv, w.NReduce)
 		SignalMapDone(&w)
 		time.Sleep(300 * time.Millisecond)
@@ -110,9 +111,9 @@ func Worker(mapf func(string, string) []KeyValue,
 				}
 				intermediate = append(intermediate, kv)
 			}
-			sort.Sort(ByKey(intermediate))
 		}
 
+		sort.Sort(ByKey(intermediate))
 		err = runReduce(&w, intermediate, reduceTaskId)
 		if err != nil {
 			fmt.Println(err)
@@ -174,8 +175,7 @@ func Register(w *WorkerData) error {
 }
 
 func GetMapTask(workerId int) (string, int, error) {
-	args := AssignFileReq{}
-	args.WorkerId = workerId
+	args := AssignFileReq{WorkerId: workerId}
 	reply := AssignFileRes{}
 	ok := call("Coordinator.AssignFile", &args, &reply)
 	if ok {
@@ -234,13 +234,12 @@ func SendIntermediateFiles(files []string) error {
 	return nil
 }
 
-func MapTask(w *WorkerData, filename string) []KeyValue {
-	w.Filename = filename
-	_, err := os.ReadFile(filename)
+func MapTask(w *WorkerData) []KeyValue {
+	_, err := os.ReadFile(w.Filename)
 	if err != nil {
-		fmt.Println("File not found: ", filename)
+		fmt.Println("File not found: ", w.Filename)
 	}
-	content, err := os.ReadFile(filename)
+	content, err := os.ReadFile(w.Filename)
 	if err != nil {
 		fmt.Println(err)
 	}

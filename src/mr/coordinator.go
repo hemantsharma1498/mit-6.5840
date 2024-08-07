@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 )
 
 var id int = 0
+
+var mrtaskId int = 0
 
 type File struct {
 	FileName  string
@@ -67,8 +70,9 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 		if v == -1 && k.Status == "IDLE" {
 			c.mapPhase[k] = args.WorkerId
 			reply.Filename = k.FileName
-			reply.TaskId = args.WorkerId
+			reply.TaskId = mrtaskId
 			go c.WorkerTimeoutChecker(&k)
+			mrtaskId++
 			break
 		}
 	}
@@ -136,7 +140,7 @@ func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *S
 
 func splitReduceIdAndFilename(filename string) (int, error) {
 	splitFilename := strings.Split(filename, "-")
-	reduceTaskNumber, err := strconv.Atoi(splitFilename[len(splitFilename)-1])
+	reduceTaskNumber, err := strconv.Atoi(strings.Split(filename, "-")[len(splitFilename)-1])
 	if err != nil {
 		return 0, err
 	}
@@ -162,10 +166,10 @@ func (c *Coordinator) server() {
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	ret := false
-	// fmt.Println(len(c.mapPhase), len(c.intermediateFilelist))
-	// if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
-	// 	ret = true
-	// }
+	fmt.Println(len(c.mapPhase), len(c.intermediateFilelist))
+	if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
+		ret = true
+	}
 	return ret
 }
 
@@ -182,7 +186,6 @@ func (c *Coordinator) MapReduceDone() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	//hardcoding nReduce to be 1
 	c.mapPhase = make(map[File]int, 1)
 	c.intermediateFilelist = make(map[int][]string, 1)
 	c.NReduce = nReduce
