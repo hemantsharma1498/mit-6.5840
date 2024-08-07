@@ -14,6 +14,12 @@ import (
 
 var id int = 0
 
+type File struct {
+	FileName  string
+	MapTaskId int
+	Status    string
+}
+
 type Coordinator struct {
 	// Your definitions here.
 
@@ -21,8 +27,7 @@ type Coordinator struct {
 
 	// map worker table
 	mapPhaseMutex sync.Mutex
-	mapFileCount  int
-	mapPhase      map[string]int // file : workerID
+	mapPhase      map[File]int // file : workerID
 
 	// reduce jobs list <reduceID> : <filelist>
 	intermediateMutex    sync.Mutex
@@ -48,13 +53,22 @@ func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWor
 	return nil
 }
 
+func (c *Coordinator) WorkerTimeoutChecker(file *File) {
+	time.Sleep(time.Second * 10)
+	if file.Status != "COMPLETED" {
+		file.Status = "IDLE"
+	}
+}
+
 func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) error {
 	c.mapPhaseMutex.Lock()
 	defer c.mapPhaseMutex.Unlock()
 	for k, v := range c.mapPhase {
-		if v == 0 {
+		if v == -1 && k.Status == "IDLE" {
 			c.mapPhase[k] = args.WorkerId
-			reply.Filename = k
+			reply.Filename = k.FileName
+			reply.TaskId = args.WorkerId
+			go c.WorkerTimeoutChecker(&k)
 			break
 		}
 	}
@@ -77,8 +91,13 @@ func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceT
 
 func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneRes) error {
 	c.mapPhaseMutex.Lock()
-	defer c.mapPhaseMutex.Unlock()
-	delete(c.mapPhase, args.Filename)
+	for file := range c.mapPhase {
+		if file.FileName == args.Filename {
+			delete(c.mapPhase, file)
+			break
+		}
+	}
+	c.mapPhaseMutex.Unlock()
 	return nil
 }
 
@@ -164,13 +183,13 @@ func (c *Coordinator) MapReduceDone() bool {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	//hardcoding nReduce to be 1
-	c.mapPhase = make(map[string]int, 1)
+	c.mapPhase = make(map[File]int, 1)
 	c.intermediateFilelist = make(map[int][]string, 1)
 	c.NReduce = nReduce
-	c.mapFileCount = nReduce
 	// Your code here.
 	for _, file := range files {
-		c.mapPhase[file] = 0
+		newFile := &File{FileName: file, Status: "IDLE", MapTaskId: -1}
+		c.mapPhase[*newFile] = -1
 	}
 
 	c.server()
@@ -179,8 +198,9 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		done := c.MapReduceDone()
 		time.Sleep(2000 * time.Millisecond)
 		if done {
-			os.Exit(0)
+			break
 		}
 	}
+	os.Exit(0)
 	return &c
 }

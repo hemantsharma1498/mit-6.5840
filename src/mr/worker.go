@@ -202,12 +202,11 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
 		files[partition] = append(files[partition], pair)
 	}
 	for partition, file := range files {
-		filename := "mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
-		tempfile, err := os.Create(filename)
+		oldFilename := "temp-mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
+		tempfile, err := os.Create(oldFilename)
 		if err != nil {
 			fmt.Println(err)
 		}
-		defer tempfile.Close()
 		enc := json.NewEncoder(tempfile)
 		for _, kv := range file {
 			err := enc.Encode(&kv)
@@ -215,8 +214,11 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
 				fmt.Println(err)
 			}
 		}
-		tempfile.Close()
-		w.IntermediateFiles = append(w.IntermediateFiles, filename)
+		newFileName := "mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
+		if err := os.Rename(oldFilename, newFileName); err != nil {
+			fmt.Println(err)
+		}
+		w.IntermediateFiles = append(w.IntermediateFiles, newFileName)
 	}
 	return nil
 }
