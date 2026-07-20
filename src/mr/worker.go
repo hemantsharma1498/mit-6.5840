@@ -76,13 +76,12 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 		w.Filename = filename
 		kv := MapTask(&w)
-		SaveIntermediateFiles(&w, kv, w.NReduce)
+		taskFiles := SaveIntermediateFiles(&w, kv, w.NReduce)
+		if err := SendIntermediateFiles(taskFiles); err != nil {
+			fmt.Println(err)
+		}
 		SignalMapDone(&w)
 		time.Sleep(300 * time.Millisecond)
-	}
-	err := SendIntermediateFiles(w.IntermediateFiles)
-	if err != nil {
-		fmt.Println(err)
 	}
 
 	for {
@@ -198,13 +197,14 @@ func SignalMapDone(w *WorkerData) {
 	call("Coordinator.MapJobUpdate", &args, &reply)
 }
 
-func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
+func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) []string {
 	files := make([][]KeyValue, nReduce)
 	for _, pair := range kv {
 		key := pair.Key
 		partition := ihash(key) % nReduce
 		files[partition] = append(files[partition], pair)
 	}
+	newFiles := []string{}
 	for partition, file := range files {
 		oldFilename := "temp-mr-" + strconv.Itoa(taskId) + "-" + strconv.Itoa(partition)
 		tempfile, err := os.Create(oldFilename)
@@ -222,9 +222,9 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) error {
 		if err := os.Rename(oldFilename, newFileName); err != nil {
 			fmt.Println(err)
 		}
-		w.IntermediateFiles = append(w.IntermediateFiles, newFileName)
+		newFiles = append(newFiles, newFileName)
 	}
-	return nil
+	return newFiles
 }
 
 func SendIntermediateFiles(files []string) error {
