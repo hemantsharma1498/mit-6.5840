@@ -35,6 +35,7 @@ type Coordinator struct {
 	intermediateMutex    sync.Mutex
 	intermediateFilelist map[int][]string
 
+	reduceTasks        map[int]int // 0=idle, 1=in-progress, 2=completed
 	reduceTaskDoneCount int
 	reduceMutex         sync.Mutex
 }
@@ -96,22 +97,31 @@ func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceT
 		return nil
 	}
 
-	if len(c.intermediateFilelist) > 0 {
-		for k, v := range c.intermediateFilelist {
-			reply.IntermediateFiles = v
+	for k, status := range c.reduceTasks {
+		if status == 0 {
+			c.reduceTasks[k] = 1
+			reply.IntermediateFiles = c.intermediateFilelist[k]
 			reply.ReduceTaskId = k
-			break
+			reduceId := k
+			go func() {
+				time.Sleep(time.Second * 10)
+				c.intermediateMutex.Lock()
+				if c.reduceTasks[reduceId] == 1 {
+					c.reduceTasks[reduceId] = 0
+				}
+				c.intermediateMutex.Unlock()
+			}()
+			return nil
 		}
-		delete(c.intermediateFilelist, reply.ReduceTaskId)
+	}
+
+	c.reduceMutex.Lock()
+	allDone := c.reduceTaskDoneCount >= c.NReduce
+	c.reduceMutex.Unlock()
+	if allDone {
+		reply.Message = 1
 	} else {
-		c.reduceMutex.Lock()
-		allDone := c.reduceTaskDoneCount >= c.NReduce
-		c.reduceMutex.Unlock()
-		if allDone {
-			reply.Message = 1
-		} else {
-			reply.Message = 2
-		}
+		reply.Message = 2
 	}
 	return nil
 }
@@ -145,6 +155,9 @@ func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *S
 		if err != nil {
 			return err
 		}
+		if _, ok := c.reduceTasks[reduceTaskNumber]; !ok {
+			c.reduceTasks[reduceTaskNumber] = 0
+		}
 		intermediateFiles := c.intermediateFilelist[reduceTaskNumber]
 		found := false
 		for _, v := range intermediateFiles {
@@ -173,9 +186,15 @@ func splitReduceIdAndFilename(filename string) (int, error) {
 }
 
 func (c *Coordinator) ReduceTaskDone(args *ReduceTaskDoneReq, reply *ReduceTaskDoneRes) error {
+	c.intermediateMutex.Lock()
+	if status, ok := c.reduceTasks[args.ReduceTaskId]; ok && status == 1 {
+		c.reduceTasks[args.ReduceTaskId] = 2
+	}
+	c.intermediateMutex.Unlock()
+
 	c.reduceMutex.Lock()
-	defer c.reduceMutex.Unlock()
 	c.reduceTaskDoneCount++
+	c.reduceMutex.Unlock()
 	return nil
 }
 
@@ -205,6 +224,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	c.mapPhase = make(map[*File]int)
 	c.intermediateFilelist = make(map[int][]string)
+	c.reduceTasks = make(map[int]int)
 	c.NReduce = nReduce
 	c.intermediateExpected = len(files) * nReduce
 	for _, file := range files {
