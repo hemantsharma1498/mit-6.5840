@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -35,6 +34,9 @@ type Coordinator struct {
 	intermediateReceived int
 	intermediateMutex    sync.Mutex
 	intermediateFilelist map[int][]string
+
+	reduceTaskDoneCount int
+	reduceMutex         sync.Mutex
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -102,7 +104,14 @@ func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceT
 		}
 		delete(c.intermediateFilelist, reply.ReduceTaskId)
 	} else {
-		reply.Message = 1
+		c.reduceMutex.Lock()
+		allDone := c.reduceTaskDoneCount >= c.NReduce
+		c.reduceMutex.Unlock()
+		if allDone {
+			reply.Message = 1
+		} else {
+			reply.Message = 2
+		}
 	}
 	return nil
 }
@@ -163,7 +172,13 @@ func splitReduceIdAndFilename(filename string) (int, error) {
 	return reduceTaskNumber, nil
 }
 
-// start a thread that listens for RPCs from worker.go
+func (c *Coordinator) ReduceTaskDone(args *ReduceTaskDoneReq, reply *ReduceTaskDoneRes) error {
+	c.reduceMutex.Lock()
+	defer c.reduceMutex.Unlock()
+	c.reduceTaskDoneCount++
+	return nil
+}
+
 func (c *Coordinator) server() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
@@ -177,23 +192,10 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
-// main/mrcoordinator.go calls Done() periodically to find out
-// if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
-	fmt.Println(len(c.mapPhase), len(c.intermediateFilelist))
-	if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
-		ret = true
-	}
-	return ret
-}
-
-func (c *Coordinator) MapReduceDone() bool {
-	ret := false
-	if len(c.mapPhase) == 0 && len(c.intermediateFilelist) == 0 {
-		ret = true
-	}
-	return ret
+	c.reduceMutex.Lock()
+	defer c.reduceMutex.Unlock()
+	return len(c.mapPhase) == 0 && c.reduceTaskDoneCount >= c.NReduce
 }
 
 // create a Coordinator.
@@ -211,14 +213,5 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	}
 
 	c.server()
-
-	for {
-		done := c.MapReduceDone()
-		time.Sleep(2000 * time.Millisecond)
-		if done {
-			break
-		}
-	}
-	os.Exit(0)
 	return &c
 }

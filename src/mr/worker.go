@@ -121,6 +121,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		if err != nil {
 			fmt.Println(err)
 		}
+		SignalReduceDone(reduceTaskId)
 	}
 	os.Exit(0)
 }
@@ -225,6 +226,12 @@ func SaveIntermediateFiles(w *WorkerData, kv []KeyValue, nReduce int) []string {
 		newFiles = append(newFiles, newFileName)
 	}
 	return newFiles
+}
+
+func SignalReduceDone(reduceTaskId int) {
+	args := ReduceTaskDoneReq{ReduceTaskId: reduceTaskId}
+	reply := ReduceTaskDoneRes{}
+	call("Coordinator.ReduceTaskDone", &args, &reply)
 }
 
 func SendIntermediateFiles(files []string) error {
