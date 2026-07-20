@@ -31,7 +31,8 @@ type Coordinator struct {
 	mapPhaseMutex sync.Mutex
 	mapPhase      map[*File]int
 
-	// reduce jobs list <reduceID> : <filelist>
+	intermediateExpected int
+	intermediateReceived int
 	intermediateMutex    sync.Mutex
 	intermediateFilelist map[int][]string
 }
@@ -81,6 +82,18 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 }
 
 func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceTaskRes) error {
+	c.intermediateMutex.Lock()
+	defer c.intermediateMutex.Unlock()
+
+	c.mapPhaseMutex.Lock()
+	mapDone := len(c.mapPhase) == 0 && c.intermediateReceived >= c.intermediateExpected
+	c.mapPhaseMutex.Unlock()
+
+	if !mapDone {
+		reply.Message = 2
+		return nil
+	}
+
 	if len(c.intermediateFilelist) > 0 {
 		for k, v := range c.intermediateFilelist {
 			reply.IntermediateFiles = v
@@ -117,26 +130,26 @@ func (c *Coordinator) JobStatus(args *JobStatusReq, reply *JobStatusRes) error {
 func (c *Coordinator) ReceiveIntermediateFiles(args *SendPartitionsReq, reply *SendPartitionsRes) error {
 	c.intermediateMutex.Lock()
 	defer c.intermediateMutex.Unlock()
+	count := 0
 	for _, file := range args.IntermediateFiles {
 		reduceTaskNumber, err := splitReduceIdAndFilename(file)
 		if err != nil {
 			return err
 		}
 		intermediateFiles := c.intermediateFilelist[reduceTaskNumber]
-		if len(intermediateFiles) > 0 {
-			found := false
-			for _, v := range intermediateFiles {
-				if v == file {
-					found = true
-				}
+		found := false
+		for _, v := range intermediateFiles {
+			if v == file {
+				found = true
+				break
 			}
-			if !found {
-				c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
-			}
-		} else {
-			c.intermediateFilelist[reduceTaskNumber] = []string{file}
+		}
+		if !found {
+			c.intermediateFilelist[reduceTaskNumber] = append(c.intermediateFilelist[reduceTaskNumber], file)
+			count++
 		}
 	}
+	c.intermediateReceived += count
 	return nil
 }
 
@@ -191,6 +204,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.mapPhase = make(map[*File]int)
 	c.intermediateFilelist = make(map[int][]string)
 	c.NReduce = nReduce
+	c.intermediateExpected = len(files) * nReduce
 	for _, file := range files {
 		f := &File{FileName: file, Status: "IDLE", MapTaskId: -1}
 		c.mapPhase[f] = -1

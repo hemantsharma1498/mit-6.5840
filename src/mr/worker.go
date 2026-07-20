@@ -90,6 +90,10 @@ func Worker(mapf func(string, string) []KeyValue,
 		if err != nil {
 			fmt.Println(err)
 		}
+		if reduceStatus == 2 {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
 		if reduceStatus == 1 {
 			break
 		}
