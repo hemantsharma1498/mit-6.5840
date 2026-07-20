@@ -23,7 +23,6 @@ type File struct {
 }
 
 type Coordinator struct {
-	// Your definitions here.
 
 	NReduce int
 
@@ -40,11 +39,6 @@ type Coordinator struct {
 	reduceMutex         sync.Mutex
 }
 
-// Your code here -- RPC handlers for the worker to call.
-
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
 func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 	reply.Y = args.X + 1
 	return nil
@@ -187,21 +181,24 @@ func splitReduceIdAndFilename(filename string) (int, error) {
 
 func (c *Coordinator) ReduceTaskDone(args *ReduceTaskDoneReq, reply *ReduceTaskDoneRes) error {
 	c.intermediateMutex.Lock()
+	wasInProgress := false
 	if status, ok := c.reduceTasks[args.ReduceTaskId]; ok && status == 1 {
 		c.reduceTasks[args.ReduceTaskId] = 2
+		wasInProgress = true
 	}
 	c.intermediateMutex.Unlock()
 
-	c.reduceMutex.Lock()
-	c.reduceTaskDoneCount++
-	c.reduceMutex.Unlock()
+	if wasInProgress {
+		c.reduceMutex.Lock()
+		c.reduceTaskDoneCount++
+		c.reduceMutex.Unlock()
+	}
 	return nil
 }
 
 func (c *Coordinator) server() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
-	//l, e := net.Listen("tcp", ":1234")
 	sockname := coordinatorSock()
 	os.Remove(sockname)
 	l, e := net.Listen("unix", sockname)
@@ -212,14 +209,15 @@ func (c *Coordinator) server() {
 }
 
 func (c *Coordinator) Done() bool {
+	c.mapPhaseMutex.Lock()
+	mapEmpty := len(c.mapPhase) == 0
+	c.mapPhaseMutex.Unlock()
+
 	c.reduceMutex.Lock()
 	defer c.reduceMutex.Unlock()
-	return len(c.mapPhase) == 0 && c.reduceTaskDoneCount >= c.NReduce
+	return mapEmpty && c.reduceTaskDoneCount >= c.NReduce
 }
 
-// create a Coordinator.
-// main/mrcoordinator.go calls this function.
-// nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	c.mapPhase = make(map[*File]int)
