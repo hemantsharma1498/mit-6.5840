@@ -28,9 +28,8 @@ type Coordinator struct {
 
 	NReduce int
 
-	// map worker table
 	mapPhaseMutex sync.Mutex
-	mapPhase      map[File]int // file : workerID
+	mapPhase      map[*File]int
 
 	// reduce jobs list <reduceID> : <filelist>
 	intermediateMutex    sync.Mutex
@@ -56,13 +55,6 @@ func (c *Coordinator) RegisterWorker(args *RegisterWorkerReq, reply *RegisterWor
 	return nil
 }
 
-func (c *Coordinator) WorkerTimeoutChecker(file *File) {
-	time.Sleep(time.Second * 10)
-	if file.Status != "COMPLETED" {
-		file.Status = "IDLE"
-	}
-}
-
 func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) error {
 	c.mapPhaseMutex.Lock()
 	defer c.mapPhaseMutex.Unlock()
@@ -71,7 +63,16 @@ func (c *Coordinator) AssignFile(args *AssignFileReq, reply *AssignFileRes) erro
 			c.mapPhase[k] = args.WorkerId
 			reply.Filename = k.FileName
 			reply.TaskId = mrtaskId
-			go c.WorkerTimeoutChecker(&k)
+			filePtr := k
+			go func() {
+				time.Sleep(time.Second * 10)
+				c.mapPhaseMutex.Lock()
+				if filePtr.Status != "COMPLETED" {
+					filePtr.Status = "IDLE"
+					c.mapPhase[filePtr] = -1
+				}
+				c.mapPhaseMutex.Unlock()
+			}()
 			mrtaskId++
 			break
 		}
@@ -95,9 +96,10 @@ func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceT
 
 func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneRes) error {
 	c.mapPhaseMutex.Lock()
-	for file := range c.mapPhase {
-		if file.FileName == args.Filename {
-			delete(c.mapPhase, file)
+	for f := range c.mapPhase {
+		if f.FileName == args.Filename {
+			f.Status = "COMPLETED"
+			delete(c.mapPhase, f)
 			break
 		}
 	}
@@ -186,13 +188,12 @@ func (c *Coordinator) MapReduceDone() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	c.mapPhase = make(map[File]int, 1)
-	c.intermediateFilelist = make(map[int][]string, 1)
+	c.mapPhase = make(map[*File]int)
+	c.intermediateFilelist = make(map[int][]string)
 	c.NReduce = nReduce
-	// Your code here.
 	for _, file := range files {
-		newFile := &File{FileName: file, Status: "IDLE", MapTaskId: -1}
-		c.mapPhase[*newFile] = -1
+		f := &File{FileName: file, Status: "IDLE", MapTaskId: -1}
+		c.mapPhase[f] = -1
 	}
 
 	c.server()
