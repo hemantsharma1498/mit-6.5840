@@ -122,6 +122,7 @@ func (c *Coordinator) AssignReduceTask(args *GetReduceTaskReq, reply *GetReduceT
 
 func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneRes) error {
 	c.mapPhaseMutex.Lock()
+	defer c.mapPhaseMutex.Unlock()
 	for f := range c.mapPhase {
 		if f.FileName == args.Filename {
 			f.Status = "COMPLETED"
@@ -129,7 +130,6 @@ func (c *Coordinator) MapJobUpdate(args *SignalMapDoneReq, reply *SignalMapDoneR
 			break
 		}
 	}
-	c.mapPhaseMutex.Unlock()
 	return nil
 }
 

@@ -66,25 +66,22 @@ func Worker(mapf func(string, string) []KeyValue,
 	w.RedFunc = reducef
 
 	for {
-		//Get file for map task
 		filename, errorInt, error := GetMapTask(w.WorkerId)
 		if errorInt != 0 {
 			fmt.Println("Error: ", errorInt, error)
 		}
-		if len(filename) == 0 {
-			break
+		if len(filename) > 0 {
+			w.Filename = filename
+			kv := MapTask(&w)
+			taskFiles := SaveIntermediateFiles(&w, kv, w.NReduce)
+			if err := SendIntermediateFiles(taskFiles); err != nil {
+				fmt.Println(err)
+			}
+			SignalMapDone(&w)
+			time.Sleep(300 * time.Millisecond)
+			continue
 		}
-		w.Filename = filename
-		kv := MapTask(&w)
-		taskFiles := SaveIntermediateFiles(&w, kv, w.NReduce)
-		if err := SendIntermediateFiles(taskFiles); err != nil {
-			fmt.Println(err)
-		}
-		SignalMapDone(&w)
-		time.Sleep(300 * time.Millisecond)
-	}
 
-	for {
 		reduceTaskId, intermediateFiles, reduceStatus, err := GetReduceTask(w.WorkerId)
 		if err != nil {
 			fmt.Println(err)
@@ -95,9 +92,6 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 		if reduceStatus == 1 {
 			break
-		}
-		if len(intermediateFiles) == 0 && reduceStatus == 0 {
-			fmt.Println("Failed getting intermediate files for reduce task: ", reduceTaskId)
 		}
 
 		intermediate := []KeyValue{}
